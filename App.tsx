@@ -196,34 +196,34 @@ const App: React.FC = () => {
   const handleSavePrescription = (p: Prescription) => setData(prev => !prev ? prev : ({ ...prev, prescriptions: [...prev.prescriptions.filter(x => x.id !== p.id), { ...p, id: p.id || generateSafeId() }] }));
   const handleDeletePrescription = (id: string) => setData(prev => !prev ? prev : ({ ...prev, prescriptions: prev.prescriptions.filter(x => x.id !== id) }));
   
-  const handleSaveAppointment = (a: MedicalAppointment) => setData(prev => !prev ? prev : ({ ...prev, medicalAppointments: [...prev.medicalAppointments.filter(x => x.id !== a.id), { ...a, id: a.id || generateSafeId() }] }));
-  const handleDeleteAppointment = (id: string) => setData(prev => !prev ? prev : ({ ...prev, medicalAppointments: prev.medicalAppointments.filter(x => x.id !== id) }));
+  const handleSaveAppointment = (a: MedicalAppointment) => setData(prev => !prev ? prev : ({ ...prev, medicalAppointments: [...(prev.medicalAppointments || []).filter(x => x.id !== a.id), { ...a, id: a.id || generateSafeId() }] }));
+  const handleDeleteAppointment = (id: string) => setData(prev => !prev ? prev : ({ ...prev, medicalAppointments: (prev.medicalAppointments || []).filter(x => x.id !== id) }));
 
-  const handleSaveDemand = (d: Demand) => setData(prev => !prev ? prev : ({ ...prev, demands: [...prev.demands.filter(x => x.id !== d.id), { ...d, id: d.id || generateSafeId() }] }));
-  const handleDeleteDemand = (id: string) => setData(prev => !prev ? prev : ({ ...prev, demands: prev.demands.filter(x => x.id !== id) }));
+  const handleSaveDemand = (d: Demand) => setData(prev => !prev ? prev : ({ ...prev, demands: [...(prev.demands || []).filter(x => x.id !== d.id), { ...d, id: d.id || generateSafeId() }] }));
+  const handleDeleteDemand = (id: string) => setData(prev => !prev ? prev : ({ ...prev, demands: (prev.demands || []).filter(x => x.id !== id) }));
 
-  const handleSaveEmployee = (e: Employee) => setData(prev => !prev ? prev : ({ ...prev, employees: [...prev.employees.filter(x => x.id !== e.id), { ...e, id: e.id || generateSafeId() }] }));
-  const handleDeleteEmployee = (id: string) => setData(prev => !prev ? prev : ({ ...prev, employees: prev.employees.filter(x => x.id !== id) }));
+  const handleSaveEmployee = (e: Employee) => setData(prev => !prev ? prev : ({ ...prev, employees: [...(prev.employees || []).filter(x => x.id !== e.id), { ...e, id: e.id || generateSafeId() }] }));
+  const handleDeleteEmployee = (id: string) => setData(prev => !prev ? prev : ({ ...prev, employees: (prev.employees || []).filter(x => x.id !== id) }));
   const handleSaveRoles = (roles: string[]) => setData(prev => !prev ? prev : ({ ...prev, employeeRoles: roles }));
-  const handleSaveTimeSheet = (ts: TimeSheetEntry) => setData(prev => !prev ? prev : ({ ...prev, timeSheets: [...prev.timeSheets, ts] }));
-  const handleDeleteTimeSheet = (date: string, empId: string) => setData(prev => !prev ? prev : ({ ...prev, timeSheets: prev.timeSheets.filter(t => !(t.date === date && t.employeeId === empId)) }));
+  const handleSaveTimeSheet = (ts: TimeSheetEntry) => setData(prev => !prev ? prev : ({ ...prev, timeSheets: [...(prev.timeSheets || []), ts] }));
+  const handleDeleteTimeSheet = (date: string, empId: string) => setData(prev => !prev ? prev : ({ ...prev, timeSheets: (prev.timeSheets || []).filter(t => !(t.date === date && t.employeeId === empId)) }));
 
-  const handleSaveTechnicalSession = (s: TechnicalSession) => setData(prev => !prev ? prev : ({ ...prev, technicalSessions: [...prev.technicalSessions.filter(x => x.id !== s.id), { ...s, id: s.id || generateSafeId() }] }));
-  const handleDeleteTechnicalSession = (id: string) => setData(prev => !prev ? prev : ({ ...prev, technicalSessions: prev.technicalSessions.filter(x => x.id !== id) }));
+  const handleSaveTechnicalSession = (s: TechnicalSession) => setData(prev => !prev ? prev : ({ ...prev, technicalSessions: [...(prev.technicalSessions || []).filter(x => x.id !== s.id), { ...s, id: s.id || generateSafeId() }] }));
+  const handleDeleteTechnicalSession = (id: string) => setData(prev => !prev ? prev : ({ ...prev, technicalSessions: (prev.technicalSessions || []).filter(x => x.id !== id) }));
 
   const handleSaveEvolution = (recs: EvolutionRecord[]) => setData(prev => {
       if(!prev) return null;
-      const current = [...prev.evolutions];
+      const current = [...(prev.evolutions || [])];
       recs.forEach(r => { current.push(r); });
       return { ...prev, evolutions: current };
   });
-  const handleDeleteEvolution = (id: string) => setData(prev => !prev ? prev : ({ ...prev, evolutions: prev.evolutions.filter(x => x.id !== id) }));
+  const handleDeleteEvolution = (id: string) => setData(prev => !prev ? prev : ({ ...prev, evolutions: (prev.evolutions || []).filter(x => x.id !== id) }));
 
-  const handleSaveProfessional = (p: Professional) => setData(prev => !prev ? prev : ({ ...prev, professionals: [...prev.professionals.filter(x => x.id !== p.id), { ...p, id: p.id || generateSafeId() }] }));
-  const handleDeleteProfessional = (id: string) => setData(prev => !prev ? prev : ({ ...prev, professionals: prev.professionals.filter(x => x.id !== id) }));
+  const handleSaveProfessional = (p: Professional) => setData(prev => !prev ? prev : ({ ...prev, professionals: [...(prev.professionals || []).filter(x => x.id !== p.id), { ...p, id: p.id || generateSafeId() }] }));
+  const handleDeleteProfessional = (id: string) => setData(prev => !prev ? prev : ({ ...prev, professionals: (prev.professionals || []).filter(x => x.id !== id) }));
 
-  const handleSaveHouseDocument = (d: HouseDocument) => setData(prev => !prev ? prev : ({ ...prev, houseDocuments: [...prev.houseDocuments.filter(x => x.id !== d.id), { ...d, id: d.id || generateSafeId() }] }));
-  const handleDeleteHouseDocument = (id: string) => setData(prev => !prev ? prev : ({ ...prev, houseDocuments: prev.houseDocuments.filter(x => x.id !== id) }));
+  const handleSaveHouseDocument = (d: HouseDocument) => setData(prev => !prev ? prev : ({ ...prev, houseDocuments: [...(prev.houseDocuments || []).filter(x => x.id !== d.id), { ...d, id: d.id || generateSafeId() }] }));
+  const handleDeleteHouseDocument = (id: string) => setData(prev => !prev ? prev : ({ ...prev, houseDocuments: (prev.houseDocuments || []).filter(x => x.id !== id) }));
 
   // --- RENDER ---
 
