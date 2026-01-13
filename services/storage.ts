@@ -223,10 +223,11 @@ const processRawData = (parsed: any): AppData => {
 // --- CARREGAMENTO DE DADOS (CLOUD FIRST) ---
 export const loadRemoteData = async (userEmail: string): Promise<AppData> => {
   const safeEmail = userEmail.trim().toLowerCase();
-  
+  const localKey = `${BASE_STORAGE_KEY}${safeEmail}`;
+  const docRef = doc(db, "institutions", safeEmail);
+
   try {
     // 1. Tentar buscar do Firestore (Nuvem)
-    const docRef = doc(db, "institutions", safeEmail);
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
@@ -237,7 +238,6 @@ export const loadRemoteData = async (userEmail: string): Promise<AppData> => {
       console.log("Nenhum dado na nuvem. Verificando dados locais para migração...");
       
       // 2. Fallback / Migração: Tentar buscar do LocalStorage
-      const localKey = `${BASE_STORAGE_KEY}${safeEmail}`;
       const localStored = localStorage.getItem(localKey);
       
       if (localStored) {
@@ -257,15 +257,17 @@ export const loadRemoteData = async (userEmail: string): Promise<AppData> => {
 
   } catch (e) {
     console.error("ERRO CRÍTICO AO CARREGAR DADOS:", e);
-    alert("Erro de conexão. Verifique sua internet. Carregando modo offline se disponível.");
-    
-    // Fallback de emergência para LocalStorage se a nuvem falhar
-    const localKey = `${BASE_STORAGE_KEY}${safeEmail}`;
+    // Em caso de ERRO (sem internet, erro de permissão), 
+    // verificamos se há dados locais para trabalhar offline.
     const localStored = localStorage.getItem(localKey);
     if (localStored) {
+       console.warn("Usando modo offline.");
        return processRawData(JSON.parse(localStored));
     }
-    return INITIAL_DATA_EXTENDED as AppData;
+    
+    // Se não há dados locais e a rede falhou, NÃO retorne dados vazios 
+    // para evitar sobrescrever a nuvem quando a conexão voltar.
+    throw new Error("Falha de conexão e sem dados locais. Não é possível inicializar.");
   }
 };
 
@@ -280,6 +282,7 @@ export const saveRemoteData = async (data: AppData, userEmail: string) => {
     // 2. Backup Local (Opcional, para redundância e fallback offline)
     const key = `${BASE_STORAGE_KEY}${safeEmail}`;
     localStorage.setItem(key, JSON.stringify(data));
+    console.log("Dados salvos na nuvem e localmente.");
     
   } catch (e: any) {
     console.error("Falha ao salvar na nuvem:", e);
@@ -288,25 +291,11 @@ export const saveRemoteData = async (data: AppData, userEmail: string) => {
     try {
         const key = `${BASE_STORAGE_KEY}${safeEmail}`;
         localStorage.setItem(key, JSON.stringify(data));
+        console.warn("Salvo apenas localmente (erro na nuvem).");
     } catch (localError) {
         console.error("Falha fatal de salvamento (Nuvem e Local falharam).");
     }
   }
-};
-
-// --- (Legacy) Carregamento Local Sincrono ---
-export const loadData = (userEmail: string): AppData => {
-    // Esta função é mantida apenas para compatibilidade, mas o App deve usar loadRemoteData
-    const safeEmail = userEmail.trim().toLowerCase();
-    const key = `${BASE_STORAGE_KEY}${safeEmail}`;
-    const stored = localStorage.getItem(key);
-    if (stored) return processRawData(JSON.parse(stored));
-    return JSON.parse(JSON.stringify(INITIAL_DATA_EXTENDED));
-};
-
-export const saveData = (data: AppData, userEmail: string) => {
-    // Wrapper simples para compatibilidade
-    saveRemoteData(data, userEmail);
 };
 
 export const exportData = (data: AppData, userEmail: string) => {

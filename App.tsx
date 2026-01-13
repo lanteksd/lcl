@@ -19,7 +19,7 @@ import { Evolutions } from './components/Evolutions';
 import { AdminPanel } from './components/AdminPanel';
 import { AppData, Product, Resident, Transaction, ViewName, Prescription, MedicalAppointment, Demand, Professional, Employee, TimeSheetEntry, TechnicalSession, EvolutionRecord, HouseDocument } from './types';
 import { loadRemoteData, saveRemoteData, exportData } from './services/storage';
-import { Upload, FileJson, AlertTriangle } from 'lucide-react';
+import { Upload, FileJson, AlertTriangle, RefreshCw } from 'lucide-react';
 
 // Helper for Safe ID Generation
 const generateSafeId = () => {
@@ -39,6 +39,7 @@ const App: React.FC = () => {
   // App State
   const [view, setView] = useState<ViewName>('dashboard');
   const [data, setData] = useState<AppData | null>(null);
+  const [isDataLoaded, setIsDataLoaded] = useState(false); // NEW: Prevent auto-save before load
   
   // Backup Logic
   const [backupHandle, setBackupHandle] = useState<any>(null);
@@ -59,8 +60,8 @@ const App: React.FC = () => {
         setIsAuthenticated(false);
         setUserEmail('');
         setData(null);
+        setIsDataLoaded(false);
       }
-      // Note: We don't setLoginLoading(false) here immediately because we need to load data first
       if (!user) setLoginLoading(false); 
     });
 
@@ -71,24 +72,29 @@ const App: React.FC = () => {
   useEffect(() => {
     async function fetchData() {
         if (isAuthenticated && userEmail) {
-            setLoginLoading(true); // Ensure loading screen is visible
+            setLoginLoading(true); 
             try {
                 const cloudData = await loadRemoteData(userEmail);
                 setData(cloudData);
+                setIsDataLoaded(true); // Enable saving only after successful load
             } catch (error) {
                 console.error("Failed to load data", error);
+                alert("Erro ao carregar dados da nuvem. Tente recarregar a página.");
             } finally {
                 setLoginLoading(false);
             }
         }
     }
-    fetchData();
-  }, [isAuthenticated, userEmail]);
+    if (isAuthenticated && userEmail && !isDataLoaded) {
+        fetchData();
+    }
+  }, [isAuthenticated, userEmail, isDataLoaded]);
 
   // Persist Data whenever it changes (Auto-save to Cloud Firestore)
   useEffect(() => {
-    if (isAuthenticated && data && userEmail) {
-      // Debounce saving slightly could be an improvement, but immediate save is safer for now
+    // CRITICAL FIX: Only save if authenticated, data exists, AND data was successfully loaded initially.
+    // This prevents overwriting cloud data with an empty state during initialization on a new device.
+    if (isAuthenticated && data && userEmail && isDataLoaded) {
       saveRemoteData(data, userEmail);
       
       // Auto-backup to File Handle if connected (Local)
@@ -112,7 +118,7 @@ const App: React.FC = () => {
         return () => clearTimeout(timeoutId);
       }
     }
-  }, [data, isAuthenticated, backupHandle, userEmail]);
+  }, [data, isAuthenticated, backupHandle, userEmail, isDataLoaded]);
 
   // --- AUTH HANDLERS ---
 
@@ -128,8 +134,9 @@ const App: React.FC = () => {
         if (Array.isArray(json.residents) && Array.isArray(json.products)) {
              // 1. Update State
              setData(json);
-             // 2. Persist immediately to Cloud
+             // 2. Persist immediately to Cloud (Force save even if not 'loaded' logic triggers, as this is manual)
              saveRemoteData(json, userEmail);
+             setIsDataLoaded(true); // Ensure auto-save continues from here
              alert("Backup restaurado com sucesso! Os dados foram sincronizados com a nuvem.");
         } else {
           alert("Arquivo inválido. Por favor, use um backup oficial do LifeCare (.json).");
@@ -145,12 +152,26 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      // State updates handled by onAuthStateChanged listener
       setBackupHandle(null);
       setView('dashboard');
+      setIsDataLoaded(false);
     } catch (error) {
       console.error("Erro ao sair:", error);
     }
+  };
+
+  const handleManualSync = async () => {
+      setLoginLoading(true);
+      try {
+          const cloudData = await loadRemoteData(userEmail);
+          setData(cloudData);
+          setIsDataLoaded(true);
+          alert("Dados sincronizados com a nuvem.");
+      } catch (e) {
+          alert("Erro ao sincronizar.");
+      } finally {
+          setLoginLoading(false);
+      }
   };
 
   // --- CRUD HANDLERS (Wrappers to update 'data' state) ---
@@ -283,7 +304,12 @@ const App: React.FC = () => {
       {view === 'admin-panel' && <AdminPanel data={data} onUpdateEmployee={handleSaveEmployee} onUpdateProfessional={handleSaveProfessional} onSaveHouseDocument={handleSaveHouseDocument} onDeleteHouseDocument={handleDeleteHouseDocument} onSaveDemand={handleSaveDemand} />}
       {view === 'settings' && (
         <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in">
-           <h2 className="text-2xl font-bold text-slate-800">Configurações e Dados</h2>
+           <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-slate-800">Configurações e Dados</h2>
+              <button onClick={handleManualSync} className="text-sm bg-blue-50 text-blue-600 px-3 py-1 rounded-lg hover:bg-blue-100 flex items-center gap-1 font-bold">
+                 <RefreshCw size={14} /> Forçar Sincronização
+              </button>
+           </div>
            
            {/* Cloud Sync Status */}
            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
