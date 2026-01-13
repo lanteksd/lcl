@@ -19,7 +19,7 @@ import { Evolutions } from './components/Evolutions';
 import { AdminPanel } from './components/AdminPanel';
 import { AppData, Product, Resident, Transaction, ViewName, Prescription, MedicalAppointment, Demand, Professional, Employee, TimeSheetEntry, TechnicalSession, EvolutionRecord, HouseDocument } from './types';
 import { loadRemoteData, saveRemoteData, exportData } from './services/storage';
-import { Upload, FileJson, AlertTriangle, RefreshCw, WifiOff } from 'lucide-react';
+import { Upload, FileJson, AlertTriangle, RefreshCw, WifiOff, Cloud, Check } from 'lucide-react';
 
 // Helper for Safe ID Generation
 const generateSafeId = () => {
@@ -39,8 +39,11 @@ const App: React.FC = () => {
   // App State
   const [view, setView] = useState<ViewName>('dashboard');
   const [data, setData] = useState<AppData | null>(null);
-  const [isDataLoaded, setIsDataLoaded] = useState(false); // NEW: Prevent auto-save before load
-  const [loadError, setLoadError] = useState(false); // NEW: Error state for UI
+  const [isDataLoaded, setIsDataLoaded] = useState(false); // Prevent auto-save before load
+  const [loadError, setLoadError] = useState(false); // Error state for UI
+  
+  // Sync Status UI
+  const [syncState, setSyncState] = useState<'SAVED' | 'SAVING' | 'ERROR'>('SAVED');
   
   // Backup Logic
   const [backupHandle, setBackupHandle] = useState<any>(null);
@@ -97,12 +100,24 @@ const App: React.FC = () => {
     // CRITICAL FIX: Only save if authenticated, data exists, AND data was successfully loaded initially.
     // This prevents overwriting cloud data with an empty state during initialization on a new device.
     if (isAuthenticated && data && userEmail && isDataLoaded) {
-      saveRemoteData(data, userEmail);
+      setSyncState('SAVING');
       
+      const saveToCloud = async () => {
+        try {
+            await saveRemoteData(data, userEmail);
+            setSyncState('SAVED');
+        } catch (error) {
+            setSyncState('ERROR');
+        }
+      };
+      
+      // Debounce save slightly to avoid thrashing
+      const timeoutId = setTimeout(saveToCloud, 500);
+
       // Auto-backup to File Handle if connected (Local)
       if (backupHandle) {
         setBackupStatus('PENDING');
-        const timeoutId = setTimeout(async () => {
+        setTimeout(async () => {
           setBackupStatus('SAVING');
           try {
             // @ts-ignore
@@ -117,8 +132,9 @@ const App: React.FC = () => {
             setBackupStatus('ERROR');
           }
         }, 2000);
-        return () => clearTimeout(timeoutId);
       }
+      
+      return () => clearTimeout(timeoutId);
     }
   }, [data, isAuthenticated, backupHandle, userEmail, isDataLoaded]);
 
@@ -316,75 +332,94 @@ const App: React.FC = () => {
   }
 
   return (
-    <Layout currentView={view} onNavigate={setView} institutionName={institutionName} onLogout={handleLogout}>
-      {view === 'dashboard' && <Dashboard data={data} onNavigate={setView} />}
-      {view === 'residents' && <Residents data={data} onSave={handleSaveResident} onDelete={handleDeleteResident} onDeleteTransaction={handleDeleteTransaction} onUpdateTransaction={handleUpdateTransaction} onSaveDemand={handleSaveDemand}/>}
-      {view === 'inventory' && <Inventory data={data} onSave={handleSaveProduct} onDelete={handleDeleteProduct} />}
-      {view === 'operations' && <StockOperations data={data} onTransaction={handleTransaction} onDeleteTransaction={handleDeleteTransaction} onUpdateTransaction={handleUpdateTransaction} />}
-      {view === 'medications' && <Medications data={data} onSave={handleSaveProduct} onDelete={handleDeleteProduct} onTransaction={handleTransaction} onSavePrescription={handleSavePrescription} onDeletePrescription={handleDeletePrescription} onDeleteTransaction={handleDeleteTransaction} onUpdateTransaction={handleUpdateTransaction}/>}
-      {view === 'medical-care' && <MedicalCare data={data} onSave={handleSaveAppointment} onDelete={handleDeleteAppointment} />}
-      {view === 'technical-care' && <TechnicalCare data={data} onSaveSession={handleSaveTechnicalSession} onDeleteSession={handleDeleteTechnicalSession} />}
-      {view === 'demands' && <Demands data={data} onSave={handleSaveDemand} onDelete={handleDeleteDemand} onSaveProfessional={handleSaveProfessional} onDeleteProfessional={handleDeleteProfessional}/>}
-      {view === 'personal-items' && <PersonalItems data={data} onTransaction={handleTransaction} />}
-      {view === 'employees' && <Employees data={data} onSaveEmployee={handleSaveEmployee} onDeleteEmployee={handleDeleteEmployee} onSaveRoles={handleSaveRoles} onSaveTimeSheet={handleSaveTimeSheet} onDeleteTimeSheet={handleDeleteTimeSheet}/>}
-      {view === 'evolutions' && <Evolutions data={data} onSaveEvolution={handleSaveEvolution} onDeleteEvolution={handleDeleteEvolution}/>}
-      {view === 'reports' && <Reports data={data} onTransaction={handleTransaction} />}
-      {view === 'admin-panel' && <AdminPanel data={data} onUpdateEmployee={handleSaveEmployee} onUpdateProfessional={handleSaveProfessional} onSaveHouseDocument={handleSaveHouseDocument} onDeleteHouseDocument={handleDeleteHouseDocument} onSaveDemand={handleSaveDemand} />}
-      {view === 'settings' && (
-        <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in">
-           <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-bold text-slate-800">Configurações e Dados</h2>
-              <button onClick={handleManualSync} className="text-sm bg-blue-50 text-blue-600 px-3 py-1 rounded-lg hover:bg-blue-100 flex items-center gap-1 font-bold">
-                 <RefreshCw size={14} /> Forçar Sincronização
-              </button>
-           </div>
-           
-           {/* Cloud Sync Status */}
-           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-              <h3 className="font-bold text-lg mb-4 text-slate-800">Conta e Sincronização</h3>
-              <div className="flex items-center gap-3 bg-emerald-50 text-emerald-800 p-4 rounded-lg border border-emerald-100">
-                 <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></div>
-                 <div>
-                    <p className="text-sm font-bold">Conectado como: {userEmail}</p>
-                    <p className="text-xs">Sincronização em nuvem ativa. Seus dados estão acessíveis em qualquer dispositivo.</p>
-                 </div>
-              </div>
-           </div>
+    <>
+      <Layout currentView={view} onNavigate={setView} institutionName={institutionName} onLogout={handleLogout}>
+        {view === 'dashboard' && <Dashboard data={data} onNavigate={setView} />}
+        {view === 'residents' && <Residents data={data} onSave={handleSaveResident} onDelete={handleDeleteResident} onDeleteTransaction={handleDeleteTransaction} onUpdateTransaction={handleUpdateTransaction} onSaveDemand={handleSaveDemand}/>}
+        {view === 'inventory' && <Inventory data={data} onSave={handleSaveProduct} onDelete={handleDeleteProduct} />}
+        {view === 'operations' && <StockOperations data={data} onTransaction={handleTransaction} onDeleteTransaction={handleDeleteTransaction} onUpdateTransaction={handleUpdateTransaction} />}
+        {view === 'medications' && <Medications data={data} onSave={handleSaveProduct} onDelete={handleDeleteProduct} onTransaction={handleTransaction} onSavePrescription={handleSavePrescription} onDeletePrescription={handleDeletePrescription} onDeleteTransaction={handleDeleteTransaction} onUpdateTransaction={handleUpdateTransaction}/>}
+        {view === 'medical-care' && <MedicalCare data={data} onSave={handleSaveAppointment} onDelete={handleDeleteAppointment} />}
+        {view === 'technical-care' && <TechnicalCare data={data} onSaveSession={handleSaveTechnicalSession} onDeleteSession={handleDeleteTechnicalSession} />}
+        {view === 'demands' && <Demands data={data} onSave={handleSaveDemand} onDelete={handleDeleteDemand} onSaveProfessional={handleSaveProfessional} onDeleteProfessional={handleDeleteProfessional}/>}
+        {view === 'personal-items' && <PersonalItems data={data} onTransaction={handleTransaction} />}
+        {view === 'employees' && <Employees data={data} onSaveEmployee={handleSaveEmployee} onDeleteEmployee={handleDeleteEmployee} onSaveRoles={handleSaveRoles} onSaveTimeSheet={handleSaveTimeSheet} onDeleteTimeSheet={handleDeleteTimeSheet}/>}
+        {view === 'evolutions' && <Evolutions data={data} onSaveEvolution={handleSaveEvolution} onDeleteEvolution={handleDeleteEvolution}/>}
+        {view === 'reports' && <Reports data={data} onTransaction={handleTransaction} />}
+        {view === 'admin-panel' && <AdminPanel data={data} onUpdateEmployee={handleSaveEmployee} onUpdateProfessional={handleSaveProfessional} onSaveHouseDocument={handleSaveHouseDocument} onDeleteHouseDocument={handleDeleteHouseDocument} onSaveDemand={handleSaveDemand} />}
+        {view === 'settings' && (
+          <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in">
+            <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold text-slate-800">Configurações e Dados</h2>
+                <button onClick={handleManualSync} className="text-sm bg-blue-50 text-blue-600 px-3 py-1 rounded-lg hover:bg-blue-100 flex items-center gap-1 font-bold">
+                  <RefreshCw size={14} /> Forçar Sincronização
+                </button>
+            </div>
+            
+            {/* Cloud Sync Status */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h3 className="font-bold text-lg mb-4 text-slate-800">Conta e Sincronização</h3>
+                <div className="flex items-center gap-3 bg-emerald-50 text-emerald-800 p-4 rounded-lg border border-emerald-100">
+                  <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></div>
+                  <div>
+                      <p className="text-sm font-bold">Conectado como: {userEmail}</p>
+                      <p className="text-xs">Sincronização em nuvem ativa. Seus dados estão acessíveis em qualquer dispositivo.</p>
+                  </div>
+                </div>
+            </div>
 
-           {/* Manual Backup & Restore */}
-           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-              <h3 className="font-bold text-lg mb-4 text-slate-800">Backup e Restauração</h3>
-              <p className="text-slate-600 mb-6 text-sm">Gerencie os dados da sua instituição.</p>
-              
-              <div className="flex flex-col gap-4">
-                 <button 
-                   onClick={() => exportData(data, userEmail)}
-                   className="bg-primary-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-primary-700 shadow-sm flex items-center justify-center gap-2"
-                 >
-                   <FileJson size={20} /> Baixar Backup Completo
-                 </button>
+            {/* Manual Backup & Restore */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h3 className="font-bold text-lg mb-4 text-slate-800">Backup e Restauração</h3>
+                <p className="text-slate-600 mb-6 text-sm">Gerencie os dados da sua instituição.</p>
+                
+                <div className="flex flex-col gap-4">
+                  <button 
+                    onClick={() => exportData(data, userEmail)}
+                    className="bg-primary-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-primary-700 shadow-sm flex items-center justify-center gap-2"
+                  >
+                    <FileJson size={20} /> Baixar Backup Completo
+                  </button>
 
-                 <div className="relative border-t pt-4 mt-2">
-                    <p className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                        <AlertTriangle size={16} className="text-amber-500"/> Área de Perigo: Restaurar Backup
-                    </p>
-                    <p className="text-xs text-slate-500 mb-3">Isso substituirá todos os dados atuais desta conta (na nuvem) pelo arquivo enviado.</p>
-                    <label className="flex items-center justify-center gap-2 w-full bg-slate-100 text-slate-600 px-6 py-3 rounded-lg font-bold hover:bg-slate-200 cursor-pointer border-2 border-dashed border-slate-300 hover:border-slate-400 transition-all">
-                        <Upload size={20} />
-                        Selecionar Arquivo de Backup
-                        <input 
-                            type="file" 
-                            accept=".json" 
-                            className="hidden" 
-                            onChange={(e) => e.target.files && handleRestore(e.target.files[0])}
-                        />
-                    </label>
-                 </div>
-              </div>
-           </div>
-        </div>
-      )}
-    </Layout>
+                  <div className="relative border-t pt-4 mt-2">
+                      <p className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                          <AlertTriangle size={16} className="text-amber-500"/> Área de Perigo: Restaurar Backup
+                      </p>
+                      <p className="text-xs text-slate-500 mb-3">Isso substituirá todos os dados atuais desta conta (na nuvem) pelo arquivo enviado.</p>
+                      <label className="flex items-center justify-center gap-2 w-full bg-slate-100 text-slate-600 px-6 py-3 rounded-lg font-bold hover:bg-slate-200 cursor-pointer border-2 border-dashed border-slate-300 hover:border-slate-400 transition-all">
+                          <Upload size={20} />
+                          Selecionar Arquivo de Backup
+                          <input 
+                              type="file" 
+                              accept=".json" 
+                              className="hidden" 
+                              onChange={(e) => e.target.files && handleRestore(e.target.files[0])}
+                          />
+                      </label>
+                  </div>
+                </div>
+            </div>
+          </div>
+        )}
+      </Layout>
+      
+      {/* Floating Sync Indicator */}
+      <div className={`fixed bottom-4 right-4 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full shadow-lg text-xs font-bold transition-all duration-300 ${syncState === 'SAVING' ? 'bg-blue-600 text-white translate-y-0 opacity-100' : (syncState === 'ERROR' ? 'bg-red-600 text-white translate-y-0 opacity-100' : 'bg-green-600 text-white translate-y-10 opacity-0')}`}>
+         {syncState === 'SAVING' ? (
+           <>
+             <RefreshCw size={12} className="animate-spin" /> Salvando na Nuvem...
+           </>
+         ) : syncState === 'ERROR' ? (
+           <>
+             <WifiOff size={12} /> Erro ao Salvar
+           </>
+         ) : (
+           <>
+             <Check size={12} /> Salvo
+           </>
+         )}
+      </div>
+    </>
   );
 };
 

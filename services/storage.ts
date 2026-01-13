@@ -226,22 +226,25 @@ export const loadRemoteData = async (userEmail: string): Promise<AppData> => {
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
-      console.log(`Dados carregados da nuvem para ${safeEmail}`);
+      console.log(`[Storage] Dados carregados da nuvem para ${safeEmail}`);
       return processRawData(docSnap.data());
     } else {
-      console.log("Nenhum dado na nuvem. Criando banco de dados inicial...");
+      console.log(`[Storage] Nenhum dado na nuvem para ${safeEmail}. Criando banco de dados inicial...`);
       
+      // Cria uma cópia profunda dos dados iniciais para evitar referências
       const initialData = JSON.parse(JSON.stringify(INITIAL_DATA_EXTENDED));
       
-      // Salva o estado inicial na nuvem
+      // Salva explicitamente o estado inicial na nuvem para garantir a existência do documento
       await setDoc(docRef, initialData);
+      console.log("[Storage] Banco de dados inicial criado com sucesso.");
+      
       return initialData;
     }
 
   } catch (e: any) {
-    console.error("ERRO AO CARREGAR DADOS DA NUVEM:", e);
-    // Lança erro para ser tratado no App.tsx com alerta visual
-    throw new Error(`Falha ao conectar com o banco de dados: ${e.message}`);
+    console.error("[Storage] ERRO AO CARREGAR DADOS DA NUVEM:", e);
+    // Lança erro detalhado para ser capturado no App.tsx
+    throw new Error(`Falha ao conectar com o banco de dados da nuvem. Código: ${e.code || 'Desconhecido'}`);
   }
 };
 
@@ -251,10 +254,11 @@ export const saveRemoteData = async (data: AppData, userEmail: string) => {
   
   try {
     await setDoc(doc(db, "institutions", safeEmail), data);
-    console.log("Dados sincronizados com a nuvem.");
+    console.log("[Storage] Dados sincronizados com a nuvem.");
   } catch (e: any) {
-    console.error("ERRO AO SALVAR NA NUVEM:", e);
-    alert("ERRO DE SINCRONIZAÇÃO: Verifique sua conexão com a internet. Os dados não estão sendo salvos na nuvem.");
+    console.error("[Storage] ERRO AO SALVAR NA NUVEM:", e);
+    // Não usamos alert aqui para não interromper o fluxo, o App.tsx gerencia o estado de erro
+    throw e; 
   }
 };
 
