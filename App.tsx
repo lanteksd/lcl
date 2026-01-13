@@ -18,7 +18,7 @@ import { Employees } from './components/Employees';
 import { Evolutions } from './components/Evolutions';
 import { AdminPanel } from './components/AdminPanel';
 import { AppData, Product, Resident, Transaction, ViewName, Prescription, MedicalAppointment, Demand, Professional, Employee, TimeSheetEntry, TechnicalSession, EvolutionRecord, HouseDocument } from './types';
-import { loadData, saveData, exportData } from './services/storage';
+import { loadRemoteData, saveRemoteData, exportData } from './services/storage';
 import { Upload, FileJson, AlertTriangle } from 'lucide-react';
 
 // Helper for Safe ID Generation
@@ -60,26 +60,38 @@ const App: React.FC = () => {
         setUserEmail('');
         setData(null);
       }
-      setLoginLoading(false);
+      // Note: We don't setLoginLoading(false) here immediately because we need to load data first
+      if (!user) setLoginLoading(false); 
     });
 
     return () => unsubscribe();
   }, []);
 
-  // Load data ONLY after authentication and userEmail is set
+  // Load Cloud Data when Authenticated
   useEffect(() => {
-    if (isAuthenticated && userEmail) {
-        const loadedData = loadData(userEmail); // Carrega dados específicos do usuário
-        setData(loadedData);
+    async function fetchData() {
+        if (isAuthenticated && userEmail) {
+            setLoginLoading(true); // Ensure loading screen is visible
+            try {
+                const cloudData = await loadRemoteData(userEmail);
+                setData(cloudData);
+            } catch (error) {
+                console.error("Failed to load data", error);
+            } finally {
+                setLoginLoading(false);
+            }
+        }
     }
+    fetchData();
   }, [isAuthenticated, userEmail]);
 
-  // Persist Data whenever it changes (Auto-save to LocalStorage specific to user)
+  // Persist Data whenever it changes (Auto-save to Cloud Firestore)
   useEffect(() => {
     if (isAuthenticated && data && userEmail) {
-      saveData(data, userEmail);
+      // Debounce saving slightly could be an improvement, but immediate save is safer for now
+      saveRemoteData(data, userEmail);
       
-      // Auto-backup to File Handle if connected
+      // Auto-backup to File Handle if connected (Local)
       if (backupHandle) {
         setBackupStatus('PENDING');
         const timeoutId = setTimeout(async () => {
@@ -116,9 +128,9 @@ const App: React.FC = () => {
         if (Array.isArray(json.residents) && Array.isArray(json.products)) {
              // 1. Update State
              setData(json);
-             // 2. Persist immediately to LocalStorage under current user
-             saveData(json, userEmail);
-             alert("Backup restaurado com sucesso para esta conta!");
+             // 2. Persist immediately to Cloud
+             saveRemoteData(json, userEmail);
+             alert("Backup restaurado com sucesso! Os dados foram sincronizados com a nuvem.");
         } else {
           alert("Arquivo inválido. Por favor, use um backup oficial do LifeCare (.json).");
         }
@@ -242,7 +254,7 @@ const App: React.FC = () => {
       <div className="min-h-screen w-full bg-slate-50 flex items-center justify-center">
          <div className="flex flex-col items-center gap-4">
             <div className="w-12 h-12 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin"></div>
-            <p className="text-slate-500 font-medium">Carregando sistema...</p>
+            <p className="text-slate-500 font-medium">Sincronizando dados...</p>
          </div>
       </div>
     );
@@ -280,7 +292,7 @@ const App: React.FC = () => {
                  <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></div>
                  <div>
                     <p className="text-sm font-bold">Conectado como: {userEmail}</p>
-                    <p className="text-xs">Autenticado via Firebase. Dados isolados localmente.</p>
+                    <p className="text-xs">Sincronização em nuvem ativa. Seus dados estão acessíveis em qualquer dispositivo.</p>
                  </div>
               </div>
            </div>
@@ -302,7 +314,7 @@ const App: React.FC = () => {
                     <p className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
                         <AlertTriangle size={16} className="text-amber-500"/> Área de Perigo: Restaurar Backup
                     </p>
-                    <p className="text-xs text-slate-500 mb-3">Isso substituirá todos os dados atuais desta conta pelo arquivo enviado.</p>
+                    <p className="text-xs text-slate-500 mb-3">Isso substituirá todos os dados atuais desta conta (na nuvem) pelo arquivo enviado.</p>
                     <label className="flex items-center justify-center gap-2 w-full bg-slate-100 text-slate-600 px-6 py-3 rounded-lg font-bold hover:bg-slate-200 cursor-pointer border-2 border-dashed border-slate-300 hover:border-slate-400 transition-all">
                         <Upload size={20} />
                         Selecionar Arquivo de Backup

@@ -1,6 +1,8 @@
 
 import { AppData, Product, Resident, Transaction, Prescription, MedicalAppointment, Demand, Professional, Employee, TimeSheetEntry, TechnicalSession, EvolutionRecord, ResidentDocument, Pharmacy, StaffDocument, HouseDocument } from "../types";
 import { INITIAL_DATA as CONST_INITIAL_DATA, INITIAL_EMPLOYEE_ROLES } from "../constants";
+import { db } from "./firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 // Extendendo INITIAL_DATA do constants para incluir o novo campo vazio
 const INITIAL_DATA_EXTENDED = {
@@ -8,7 +10,7 @@ const INITIAL_DATA_EXTENDED = {
   houseDocuments: []
 };
 
-// Prefixo base. A chave final será careflow_db_{email}
+// Prefixo base para dados locais (Fallback)
 const BASE_STORAGE_KEY = 'careflow_db_'; 
 
 // --- SAFE ID GENERATOR ---
@@ -23,8 +25,7 @@ const generateSafeId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2);
 };
 
-// --- MIGRATION HELPERS ---
-// (Mantidos os mesmos helpers de migração para garantir integridade)
+// --- MIGRATION HELPERS (Mantidos para integridade) ---
 const migrateDocument = (d: any): ResidentDocument => ({
   id: d.id || generateSafeId(),
   type: d.type || 'OUTRO',
@@ -198,10 +199,9 @@ const migrateEvolution = (ev: any): EvolutionRecord => ({
   createdAt: ev.createdAt || new Date().toISOString()
 });
 
-const parseAndMigrate = (jsonString: string): AppData | null => {
-  try {
-    const parsed = JSON.parse(jsonString);
-    if (!parsed || typeof parsed !== 'object') return null;
+// Helper para processar objeto cru (JSON) e transformar em AppData tipado
+const processRawData = (parsed: any): AppData => {
+    if (!parsed || typeof parsed !== 'object') return INITIAL_DATA_EXTENDED as AppData;
 
     return {
       residents: Array.isArray(parsed.residents) ? parsed.residents.map(migrateResident) : [],
@@ -218,64 +218,95 @@ const parseAndMigrate = (jsonString: string): AppData | null => {
       evolutions: Array.isArray(parsed.evolutions) ? parsed.evolutions.map(migrateEvolution) : [],
       houseDocuments: Array.isArray(parsed.houseDocuments) ? parsed.houseDocuments.map(migrateHouseDocument) : [],
     };
-  } catch (e) {
-    console.error("Erro ao migrar dados:", e);
-    return null;
-  }
 };
 
-// --- FUNÇÃO DE LOGIN / CHECK USER ---
-export const checkUserExists = (email: string): boolean => {
-    const key = `${BASE_STORAGE_KEY}${email.trim().toLowerCase()}`;
-    return !!localStorage.getItem(key);
-};
-
-// --- CARREGAMENTO DE DADOS COM ISOLAMENTO ---
-export const loadData = (userEmail: string): AppData => {
+// --- CARREGAMENTO DE DADOS (CLOUD FIRST) ---
+export const loadRemoteData = async (userEmail: string): Promise<AppData> => {
+  const safeEmail = userEmail.trim().toLowerCase();
+  
   try {
-    const safeEmail = userEmail.trim().toLowerCase();
-    const key = `${BASE_STORAGE_KEY}${safeEmail}`;
-    
-    const stored = localStorage.getItem(key);
+    // 1. Tentar buscar do Firestore (Nuvem)
+    const docRef = doc(db, "institutions", safeEmail);
+    const docSnap = await getDoc(docRef);
 
-    if (stored) {
-      const data = parseAndMigrate(stored);
-      if (data) {
-        console.log(`Dados carregados para ${safeEmail}.`);
-        return data;
+    if (docSnap.exists()) {
+      console.log(`Dados carregados da nuvem para ${safeEmail}`);
+      const cloudData = docSnap.data();
+      return processRawData(cloudData);
+    } else {
+      console.log("Nenhum dado na nuvem. Verificando dados locais para migração...");
+      
+      // 2. Fallback / Migração: Tentar buscar do LocalStorage
+      const localKey = `${BASE_STORAGE_KEY}${safeEmail}`;
+      const localStored = localStorage.getItem(localKey);
+      
+      if (localStored) {
+        console.log("Dados locais encontrados. Migrando para nuvem...");
+        const localData = JSON.parse(localStored);
+        const processedLocal = processRawData(localData);
+        
+        // Salva na nuvem para a próxima vez
+        await setDoc(docRef, processedLocal);
+        return processedLocal;
       }
+      
+      // 3. Nova conta (Limpa)
+      console.log("Conta totalmente nova. Inicializando.");
+      return JSON.parse(JSON.stringify(INITIAL_DATA_EXTENDED));
     }
-    
-    // Se não houver dados, retorna o estado inicial limpo (NOVA CONTA)
-    console.log(`Nova conta detectada para ${safeEmail}. Inicializando banco limpo.`);
-    
-    // IMPORTANTE: Para novas contas, começamos com arrays vazios, não com dados de exemplo (exceto produtos base se desejado)
-    // Clonamos o INITIAL_DATA para garantir que não estamos passando referências
-    return JSON.parse(JSON.stringify(INITIAL_DATA_EXTENDED));
 
   } catch (e) {
-    console.error("ERRO CRÍTICO DE CARREGAMENTO:", e);
+    console.error("ERRO CRÍTICO AO CARREGAR DADOS:", e);
+    alert("Erro de conexão. Verifique sua internet. Carregando modo offline se disponível.");
+    
+    // Fallback de emergência para LocalStorage se a nuvem falhar
+    const localKey = `${BASE_STORAGE_KEY}${safeEmail}`;
+    const localStored = localStorage.getItem(localKey);
+    if (localStored) {
+       return processRawData(JSON.parse(localStored));
+    }
     return INITIAL_DATA_EXTENDED as AppData;
   }
 };
 
-// --- SALVAMENTO COM ISOLAMENTO ---
-export const saveData = (data: AppData, userEmail: string) => {
+// --- SALVAMENTO DE DADOS (CLOUD) ---
+export const saveRemoteData = async (data: AppData, userEmail: string) => {
+  const safeEmail = userEmail.trim().toLowerCase();
+  
   try {
+    // 1. Salvar na Nuvem
+    await setDoc(doc(db, "institutions", safeEmail), data);
+    
+    // 2. Backup Local (Opcional, para redundância e fallback offline)
+    const key = `${BASE_STORAGE_KEY}${safeEmail}`;
+    localStorage.setItem(key, JSON.stringify(data));
+    
+  } catch (e: any) {
+    console.error("Falha ao salvar na nuvem:", e);
+    
+    // Tenta salvar pelo menos localmente se a nuvem falhar
+    try {
+        const key = `${BASE_STORAGE_KEY}${safeEmail}`;
+        localStorage.setItem(key, JSON.stringify(data));
+    } catch (localError) {
+        console.error("Falha fatal de salvamento (Nuvem e Local falharam).");
+    }
+  }
+};
+
+// --- (Legacy) Carregamento Local Sincrono ---
+export const loadData = (userEmail: string): AppData => {
+    // Esta função é mantida apenas para compatibilidade, mas o App deve usar loadRemoteData
     const safeEmail = userEmail.trim().toLowerCase();
     const key = `${BASE_STORAGE_KEY}${safeEmail}`;
-    const stringified = JSON.stringify(data);
-    
-    try {
-      localStorage.setItem(key, stringified);
-    } catch (e: any) {
-      if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
-        alert("ATENÇÃO: Armazenamento cheio! Não foi possível salvar as alterações desta conta.");
-      }
-    }
-  } catch (e) {
-    console.error("Falha fatal ao salvar dados", e);
-  }
+    const stored = localStorage.getItem(key);
+    if (stored) return processRawData(JSON.parse(stored));
+    return JSON.parse(JSON.stringify(INITIAL_DATA_EXTENDED));
+};
+
+export const saveData = (data: AppData, userEmail: string) => {
+    // Wrapper simples para compatibilidade
+    saveRemoteData(data, userEmail);
 };
 
 export const exportData = (data: AppData, userEmail: string) => {
