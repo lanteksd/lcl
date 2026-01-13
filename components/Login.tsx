@@ -1,85 +1,72 @@
 
 import React, { useState } from 'react';
 import { HeartHandshake, Lock, Mail, ArrowRight, Loader2, Cloud, ShieldCheck, UserPlus, LogIn, KeyRound, ArrowLeft, CheckCircle2 } from 'lucide-react';
-import { checkUserExists } from '../services/storage';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '../services/firebase';
 
-interface LoginProps {
-  onLogin: (email: string) => void;
-  onRestore: (file: File) => void; 
-  hasLocalData: boolean; 
-  isLoading: boolean;
-}
-
-export const Login: React.FC<LoginProps> = ({ onLogin, isLoading }) => {
+export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mode, setMode] = useState<'LOGIN' | 'REGISTER' | 'FORGOT'>('LOGIN');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   // Validação simples de formato de e-mail
   const isValidEmail = (email: string) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const getFirebaseErrorMessage = (error: any) => {
+    const code = error.code;
+    switch(code) {
+        case 'auth/invalid-email': return 'E-mail inválido.';
+        case 'auth/user-disabled': return 'Este usuário foi desativado.';
+        case 'auth/user-not-found': return 'Usuário não encontrado.';
+        case 'auth/wrong-password': return 'Senha incorreta.';
+        case 'auth/email-already-in-use': return 'Este e-mail já está em uso.';
+        case 'auth/weak-password': return 'A senha deve ter pelo menos 6 caracteres.';
+        case 'auth/invalid-credential': return 'Credenciais inválidas.';
+        default: return `Erro: ${error.message}`;
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
+    setIsLoading(true);
 
-    // Validação de E-mail
     if (!email) {
         setErrorMsg('O campo e-mail é obrigatório.');
+        setIsLoading(false);
         return;
     }
 
     if (!isValidEmail(email)) {
-        setErrorMsg('Por favor, insira um endereço de e-mail válido (ex: nome@instituicao.com).');
+        setErrorMsg('Por favor, insira um endereço de e-mail válido.');
+        setIsLoading(false);
         return;
     }
 
-    // Lógica para Recuperação de Senha
-    if (mode === 'FORGOT') {
-        const userExists = checkUserExists(email);
-        
-        if (userExists) {
-            // Simulação de envio de e-mail (Frontend Only)
-            setTimeout(() => {
-                setSuccessMsg(`Instruções de redefinição de senha foram enviadas para ${email}. Verifique sua caixa de entrada e spam.`);
-                // Opcional: Limpar campo após sucesso
-                // setEmail(''); 
-            }, 1000);
-        } else {
-            setErrorMsg('Este e-mail não foi encontrado em nosso sistema.');
+    try {
+        if (mode === 'LOGIN') {
+            if (!password) throw { code: 'auth/wrong-password', message: 'Senha vazia' };
+            await signInWithEmailAndPassword(auth, email, password);
+            // Redirection happens via onAuthStateChanged in App.tsx
+        } else if (mode === 'REGISTER') {
+            if (!password) throw { code: 'auth/weak-password', message: 'Senha vazia' };
+            await createUserWithEmailAndPassword(auth, email, password);
+            // Auto login happens
+        } else if (mode === 'FORGOT') {
+            await sendPasswordResetEmail(auth, email);
+            setSuccessMsg(`Instruções enviadas para ${email}. Verifique seu e-mail.`);
+            setIsLoading(false);
         }
-        return;
-    }
-
-    // Validação de Senha para Login/Registro
-    if (!password) {
-        setErrorMsg('Por favor, insira sua senha.');
-        return;
-    }
-
-    if (mode === 'LOGIN') {
-        const userExists = checkUserExists(email);
-        if (userExists) {
-            onLogin(email);
-        } else {
-            setErrorMsg('Conta não encontrada. Verifique o e-mail ou crie uma nova conta.');
-        }
-    } else {
-        // Register Mode
-        const userExists = checkUserExists(email);
-        if (userExists) {
-            setErrorMsg('Este e-mail já possui uma conta. Faça login.');
-        } else {
-            if (password.length < 6) {
-                setErrorMsg('A senha deve ter no mínimo 6 caracteres.');
-                return;
-            }
-            onLogin(email); // Cria a conta ao logar pela primeira vez com um e-mail novo
-        }
+    } catch (error: any) {
+        console.error("Firebase Auth Error:", error);
+        setErrorMsg(getFirebaseErrorMessage(error));
+        setIsLoading(false);
     }
   };
 
@@ -87,7 +74,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin, isLoading }) => {
       setMode(newMode);
       setErrorMsg('');
       setSuccessMsg('');
-      // Mantemos o e-mail preenchido para conveniência, mas limpamos senha
       setPassword(''); 
   };
 
@@ -119,12 +105,14 @@ export const Login: React.FC<LoginProps> = ({ onLogin, isLoading }) => {
                 <button 
                 onClick={() => switchMode('LOGIN')}
                 className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${mode === 'LOGIN' ? 'bg-white text-primary-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                type="button"
                 >
                     <LogIn size={16} /> Entrar
                 </button>
                 <button 
                 onClick={() => switchMode('REGISTER')}
                 className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${mode === 'REGISTER' ? 'bg-white text-primary-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                type="button"
                 >
                     <UserPlus size={16} /> Criar Conta
                 </button>

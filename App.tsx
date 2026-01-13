@@ -1,5 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth } from './services/firebase';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { Login } from './components/Login';
@@ -32,7 +34,7 @@ const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userEmail, setUserEmail] = useState(''); // Guarda o email do usuário logado
   const [institutionName, setInstitutionName] = useState('');
-  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginLoading, setLoginLoading] = useState(true); // Start loading to check firebase status
 
   // App State
   const [view, setView] = useState<ViewName>('dashboard');
@@ -41,6 +43,28 @@ const App: React.FC = () => {
   // Backup Logic
   const [backupHandle, setBackupHandle] = useState<any>(null);
   const [backupStatus, setBackupStatus] = useState<'IDLE' | 'PENDING' | 'SAVING' | 'SUCCESS' | 'ERROR'>('IDLE');
+
+  // Firebase Auth Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user && user.email) {
+        setUserEmail(user.email);
+        setIsAuthenticated(true);
+        
+        // Extract Institution Name from Email
+        const domain = user.email.split('@')[1];
+        const cleanName = domain ? domain.split('.')[0].toUpperCase() : 'INSTITUIÇÃO';
+        setInstitutionName(cleanName === 'GMAIL' || cleanName === 'HOTMAIL' ? `CONTA DE ${user.email.split('@')[0].toUpperCase()}` : cleanName);
+      } else {
+        setIsAuthenticated(false);
+        setUserEmail('');
+        setData(null);
+      }
+      setLoginLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Load data ONLY after authentication and userEmail is set
   useEffect(() => {
@@ -80,23 +104,6 @@ const App: React.FC = () => {
 
   // --- AUTH HANDLERS ---
 
-  const handleLogin = (email: string) => {
-    setLoginLoading(true);
-    
-    setTimeout(() => {
-        setIsAuthenticated(true);
-        setUserEmail(email);
-        
-        // Extract Institution Name from Email
-        const domain = email.split('@')[1];
-        const cleanName = domain ? domain.split('.')[0].toUpperCase() : 'INSTITUIÇÃO';
-        setInstitutionName(cleanName === 'GMAIL' || cleanName === 'HOTMAIL' ? `CONTA DE ${email.split('@')[0].toUpperCase()}` : cleanName);
-        
-        setLoginLoading(false);
-    }, 1000);
-  };
-
-  // Restore moved to Settings (Authenticated only)
   const handleRestore = (file: File) => {
     if (!isAuthenticated) return;
 
@@ -123,12 +130,15 @@ const App: React.FC = () => {
     reader.readAsText(file);
   };
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setUserEmail('');
-    setData(null);
-    setBackupHandle(null);
-    setView('dashboard');
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      // State updates handled by onAuthStateChanged listener
+      setBackupHandle(null);
+      setView('dashboard');
+    } catch (error) {
+      console.error("Erro ao sair:", error);
+    }
   };
 
   // --- CRUD HANDLERS (Wrappers to update 'data' state) ---
@@ -227,14 +237,20 @@ const App: React.FC = () => {
 
   // --- RENDER ---
 
+  if (loginLoading) {
+    return (
+      <div className="min-h-screen w-full bg-slate-50 flex items-center justify-center">
+         <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin"></div>
+            <p className="text-slate-500 font-medium">Carregando sistema...</p>
+         </div>
+      </div>
+    );
+  }
+
   if (!isAuthenticated || !data) {
     return (
-        <Login 
-            onLogin={handleLogin} 
-            onRestore={() => {}} // Deprecated in Login, moved to Settings
-            hasLocalData={false} // Deprecated check
-            isLoading={loginLoading}
-        />
+        <Login />
     );
   }
 
@@ -264,7 +280,7 @@ const App: React.FC = () => {
                  <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></div>
                  <div>
                     <p className="text-sm font-bold">Conectado como: {userEmail}</p>
-                    <p className="text-xs">Dados isolados localmente para esta conta.</p>
+                    <p className="text-xs">Autenticado via Firebase. Dados isolados localmente.</p>
                  </div>
               </div>
            </div>
