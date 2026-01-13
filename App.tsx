@@ -19,7 +19,7 @@ import { Evolutions } from './components/Evolutions';
 import { AdminPanel } from './components/AdminPanel';
 import { AppData, Product, Resident, Transaction, ViewName, Prescription, MedicalAppointment, Demand, Professional, Employee, TimeSheetEntry, TechnicalSession, EvolutionRecord, HouseDocument } from './types';
 import { loadRemoteData, saveRemoteData, exportData } from './services/storage';
-import { Upload, FileJson, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Upload, FileJson, AlertTriangle, RefreshCw, WifiOff } from 'lucide-react';
 
 // Helper for Safe ID Generation
 const generateSafeId = () => {
@@ -35,11 +35,12 @@ const App: React.FC = () => {
   const [userEmail, setUserEmail] = useState(''); // Guarda o email do usuário logado
   const [institutionName, setInstitutionName] = useState('');
   const [loginLoading, setLoginLoading] = useState(true); // Start loading to check firebase status
-
+  
   // App State
   const [view, setView] = useState<ViewName>('dashboard');
   const [data, setData] = useState<AppData | null>(null);
   const [isDataLoaded, setIsDataLoaded] = useState(false); // NEW: Prevent auto-save before load
+  const [loadError, setLoadError] = useState(false); // NEW: Error state for UI
   
   // Backup Logic
   const [backupHandle, setBackupHandle] = useState<any>(null);
@@ -73,13 +74,14 @@ const App: React.FC = () => {
     async function fetchData() {
         if (isAuthenticated && userEmail) {
             setLoginLoading(true); 
+            setLoadError(false);
             try {
                 const cloudData = await loadRemoteData(userEmail);
                 setData(cloudData);
                 setIsDataLoaded(true); // Enable saving only after successful load
             } catch (error) {
                 console.error("Failed to load data", error);
-                alert("Erro ao carregar dados da nuvem. Tente recarregar a página.");
+                setLoadError(true);
             } finally {
                 setLoginLoading(false);
             }
@@ -155,6 +157,7 @@ const App: React.FC = () => {
       setBackupHandle(null);
       setView('dashboard');
       setIsDataLoaded(false);
+      setLoadError(false);
     } catch (error) {
       console.error("Erro ao sair:", error);
     }
@@ -166,9 +169,11 @@ const App: React.FC = () => {
           const cloudData = await loadRemoteData(userEmail);
           setData(cloudData);
           setIsDataLoaded(true);
+          setLoadError(false);
           alert("Dados sincronizados com a nuvem.");
       } catch (e) {
           alert("Erro ao sincronizar.");
+          setLoadError(true);
       } finally {
           setLoginLoading(false);
       }
@@ -279,6 +284,29 @@ const App: React.FC = () => {
          </div>
       </div>
     );
+  }
+
+  // New Error State Screen
+  if (loadError) {
+      return (
+          <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+              <div className="bg-white p-8 rounded-xl shadow-lg max-w-md text-center border border-slate-200">
+                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500">
+                      <WifiOff size={32} />
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-800 mb-2">Erro de Conexão</h2>
+                  <p className="text-slate-500 mb-6">Não foi possível carregar os dados da nuvem. Verifique sua internet e tente novamente.</p>
+                  
+                  <button onClick={() => window.location.reload()} className="w-full bg-primary-600 text-white py-3 rounded-lg font-bold hover:bg-primary-700 transition-colors shadow-sm mb-3">
+                      Tentar Novamente
+                  </button>
+                  
+                  <button onClick={handleLogout} className="w-full bg-slate-100 text-slate-600 py-3 rounded-lg font-bold hover:bg-slate-200 transition-colors">
+                      Sair / Trocar Conta
+                  </button>
+              </div>
+          </div>
+      );
   }
 
   if (!isAuthenticated || !data) {
